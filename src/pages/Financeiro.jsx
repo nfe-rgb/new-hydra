@@ -15,11 +15,6 @@ const toISO = (d) => {
 };
 const fmtISO = (iso) => String(iso).split("-").reverse().join("/");
 const paidTs = (item) => item.paid_at || toDateOnlyTs(item.due_date);
-const normalizeSundayISO = (iso) => {
-  const d = new Date(`${iso}T00:00:00`);
-  if (Number.isNaN(d.getTime())) return toISO(startOfWeek(new Date()));
-  return toISO(startOfWeek(d));
-};
 function startOfDay(d){ const x=new Date(d); x.setHours(0,0,0,0); return x; }
 function endOfDay(d){ const x=new Date(d); x.setHours(23,59,59,999); return x; }
 function startOfWeek(d){ const x=new Date(d); const dow=x.getDay(); x.setDate(x.getDate()-dow); x.setHours(0,0,0,0); return x; }
@@ -45,7 +40,8 @@ export default function Financeiro(){
   const [confirmPay, setConfirmPay] = useState({ type:null, id:null });
   const [paidDate, setPaidDate] = useState(()=> toISO(new Date()));
   const [showWeeklyReport, setShowWeeklyReport] = useState(false);
-  const [weekStartISO, setWeekStartISO] = useState(()=> toISO(startOfWeek(new Date())));
+  const [reportFrom, setReportFrom] = useState(()=> toISO(startOfWeek(new Date())));
+  const [reportTo, setReportTo] = useState(()=> toISO(endOfWeek(new Date())));
 
   // PRESETS com Portal + posição fixa
   const [showPresets, setShowPresets] = useState(false);
@@ -119,39 +115,41 @@ export default function Financeiro(){
   const saldoReal = entradasPagasAte - saidasPagasAte;
   const saldoPrevisto = saldoReal + entradasPrev - saidasPrev;
 
-  const weekRange = useMemo(() => {
-    const ws = startOfWeek(new Date(`${weekStartISO}T00:00:00`));
-    const we = endOfWeek(ws);
+  const reportRange = useMemo(() => {
+    const fromDate = startOfDay(new Date(`${reportFrom}T00:00:00`));
+    const toDate = endOfDay(new Date(`${reportTo}T00:00:00`));
+    const start = fromDate.getTime() <= toDate.getTime() ? fromDate : startOfDay(toDate);
+    const end = fromDate.getTime() <= toDate.getTime() ? toDate : endOfDay(fromDate);
     return {
-      ws,
-      we,
-      wsTs: ws.getTime(),
-      weTs: we.getTime(),
-      wsISO: toISO(ws),
-      weISO: toISO(we),
+      from: start,
+      to: end,
+      fromTs: start.getTime(),
+      toTs: end.getTime(),
+      fromISO: toISO(start),
+      toISO: toISO(end),
     };
-  }, [weekStartISO]);
+  }, [reportFrom, reportTo]);
 
   const entradasSemana = useMemo(() => (receivables || [])
     .filter(r => r.status === "paid")
     .map(r => ({ ...r, _ts: paidTs(r) }))
-    .filter(r => r._ts >= weekRange.wsTs && r._ts <= weekRange.weTs)
-    .sort((a, b) => a._ts - b._ts), [receivables, weekRange]);
+    .filter(r => r._ts >= reportRange.fromTs && r._ts <= reportRange.toTs)
+    .sort((a, b) => a._ts - b._ts), [receivables, reportRange]);
 
   const saidasSemana = useMemo(() => (payables || [])
     .filter(p => p.status === "paid")
     .map(p => ({ ...p, _ts: paidTs(p) }))
-    .filter(p => p._ts >= weekRange.wsTs && p._ts <= weekRange.weTs)
-    .sort((a, b) => a._ts - b._ts), [payables, weekRange]);
+    .filter(p => p._ts >= reportRange.fromTs && p._ts <= reportRange.toTs)
+    .sort((a, b) => a._ts - b._ts), [payables, reportRange]);
 
-  const weekMonthKey = ymKey(weekRange.wsISO);
+  const reportMonthKey = ymKey(reportRange.fromISO);
   const saldoInicialSemana = useMemo(() => {
-    const openingMonth = cashOpening[weekMonthKey] || 0;
-    const monthStartTs = startOfMonth(weekRange.ws).getTime();
-    const recBefore = sum(receivables || [], r => r.status === "paid" && paidTs(r) >= monthStartTs && paidTs(r) < weekRange.wsTs);
-    const payBefore = sum(payables || [], p => p.status === "paid" && paidTs(p) >= monthStartTs && paidTs(p) < weekRange.wsTs);
+    const openingMonth = cashOpening[reportMonthKey] || 0;
+    const monthStartTs = startOfMonth(reportRange.from).getTime();
+    const recBefore = sum(receivables || [], r => r.status === "paid" && paidTs(r) >= monthStartTs && paidTs(r) < reportRange.fromTs);
+    const payBefore = sum(payables || [], p => p.status === "paid" && paidTs(p) >= monthStartTs && paidTs(p) < reportRange.fromTs);
     return openingMonth + recBefore - payBefore;
-  }, [cashOpening, weekMonthKey, receivables, payables, weekRange]);
+  }, [cashOpening, reportMonthKey, receivables, payables, reportRange]);
 
   const entradasSemanaTotal = sum(entradasSemana);
   const saidasSemanaTotal = sum(saidasSemana);
@@ -169,8 +167,8 @@ export default function Financeiro(){
       label: `${p.description}${p.category ? ` (${p.category})` : ""}`,
     }));
     const { blob, fileName } = gerarPdfRelatorioSemanal({
-      weekStart: weekRange.ws,
-      weekEnd: weekRange.we,
+      periodStart: reportRange.from,
+      periodEnd: reportRange.to,
       openingCents: saldoInicialSemana,
       entradas,
       saidas,
@@ -220,7 +218,16 @@ export default function Financeiro(){
               <span className="hint">Até</span><strong>{fmtISO(to)}</strong>
             </div>
             <button className="btn ghost ripple" onClick={()=>setShowPicker(true)}>Alterar datas</button>
-            <button className="btn primary ripple" onClick={()=>setShowWeeklyReport(true)}>Relatorio Semanal</button>
+            <button
+              className="btn primary ripple"
+              onClick={()=>{
+                setReportFrom(from);
+                setReportTo(to);
+                setShowWeeklyReport(true);
+              }}
+            >
+              Relatorio por Periodo
+            </button>
           </div>
         </div>
       </div>
@@ -304,31 +311,32 @@ export default function Financeiro(){
         </div>
       </Modal>
 
-      {/* Modal - Relatorio semanal */}
-      <Modal open={showWeeklyReport} onClose={()=>setShowWeeklyReport(false)} title="Relatorio Semanal">
+      {/* Modal - Relatorio por periodo */}
+      <Modal open={showWeeklyReport} onClose={()=>setShowWeeklyReport(false)} title="Relatorio por Periodo">
         <div className="stack">
-          <div className="muted">Selecione a semana para gerar o PDF.</div>
+          <div className="muted">Selecione o periodo para gerar o PDF.</div>
           <div className="row">
             <div className="stack" style={{flex:1}}>
-              <label className="muted" style={{fontSize:12}}>Semana (inicio)</label>
+              <label className="muted" style={{fontSize:12}}>De</label>
               <input
                 className="input"
                 type="date"
-                min="1970-01-04"
-                step={7}
-                value={weekRange.wsISO}
-                onChange={(e)=>setWeekStartISO(normalizeSundayISO(e.target.value))}
+                value={reportRange.fromISO}
+                onChange={(e)=>setReportFrom(e.target.value)}
               />
             </div>
             <div className="stack" style={{flex:1}}>
-              <label className="muted" style={{fontSize:12}}>Fim</label>
-              <div className="pill">
-                <span className="hint">Ate</span><strong>{fmtISO(weekRange.weISO)}</strong>
-              </div>
+              <label className="muted" style={{fontSize:12}}>Ate</label>
+              <input
+                className="input"
+                type="date"
+                value={reportRange.toISO}
+                onChange={(e)=>setReportTo(e.target.value)}
+              />
             </div>
           </div>
           <div className="muted" style={{fontSize:12}}>
-            Registro da semana: {fmtISO(weekRange.wsISO)} a {fmtISO(weekRange.weISO)}
+            Registro do periodo: {fmtISO(reportRange.fromISO)} a {fmtISO(reportRange.toISO)}
           </div>
           <div style={{display:"flex", justifyContent:"flex-end", gap:8}}>
             <button className="btn ripple" onClick={()=>setShowWeeklyReport(false)}>Cancelar</button>

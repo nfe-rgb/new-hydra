@@ -46,6 +46,8 @@ const drawList = (doc, items, x, y, maxWidth, pageH, margin) => {
 };
 
 export function gerarPdfRelatorioSemanal({
+  periodStart,
+  periodEnd,
   weekStart,
   weekEnd,
   openingCents,
@@ -53,6 +55,9 @@ export function gerarPdfRelatorioSemanal({
   saidas = [],
   saldoFinalCents,
 }) {
+  const rangeStart = periodStart || weekStart;
+  const rangeEnd = periodEnd || weekEnd;
+
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
@@ -61,14 +66,14 @@ export function gerarPdfRelatorioSemanal({
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(16);
-  doc.text("Relatorio Semanal", pageW / 2, y, { align: "center" });
+  doc.text("Relatorio por Periodo", pageW / 2, y, { align: "center" });
   y += 24;
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(11);
   y = drawWrappedLine(
     doc,
-    `Registro da Semana: ${fmtDate(weekStart)} a ${fmtDate(weekEnd)}`,
+    `Registro do Periodo: ${fmtDate(rangeStart)} a ${fmtDate(rangeEnd)}`,
     margin,
     y,
     pageW - margin * 2,
@@ -78,7 +83,7 @@ export function gerarPdfRelatorioSemanal({
 
   y = drawWrappedLine(
     doc,
-    `Saldo Inicial da Semana: ${formatCents(openingCents)}`,
+    `Saldo Inicial do Periodo: ${formatCents(openingCents)}`,
     margin,
     y,
     pageW - margin * 2,
@@ -117,11 +122,11 @@ export function gerarPdfRelatorioSemanal({
   y += 8;
   y = ensureSpace(doc, y, 16, pageH, margin);
   doc.setFont("helvetica", "bold");
-  doc.text(`Saldo Final da Semana: ${formatCents(saldoFinalCents)}`, margin, y);
+  doc.text(`Saldo Final do Periodo: ${formatCents(saldoFinalCents)}`, margin, y);
 
-  const weekStartISO = toISODate(weekStart);
-  const weekEndISO = toISODate(weekEnd);
-  const fileName = `Relatorio_Semanal_${weekStartISO}_a_${weekEndISO}.pdf`;
+  const periodStartISO = toISODate(rangeStart);
+  const periodEndISO = toISODate(rangeEnd);
+  const fileName = `Relatorio_Periodo_${periodStartISO}_a_${periodEndISO}.pdf`;
   const blob = doc.output("blob");
   return { blob, fileName };
 }
